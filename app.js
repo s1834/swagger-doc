@@ -4,12 +4,58 @@ const swaggerui = require("swagger-ui-express");
 
 const app = express();
 
+const basicAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || authHeader.indexOf("Basic ") !== 0) {
+    res.set("WWW-authenticate", 'Basic realm="Restricted Area"');
+    return res.status(401).send({ message: "Authentication required" });
+  }
+  const base64Credentials = authHeader.split(" ")[1];
+  const credentials = Buffer.from(base64Credentials, "base64").toString(
+    "ascii"
+  );
+  const [username, password] = credentials.split(":");
+
+  const validUser = username === "admin" && password === "password";
+  if (!validUser) {
+    return res.status(401).send({ message: "Invalid credentials" });
+  }
+
+  next();
+};
+
 const swaggerOptions = {
   swaggerDefinition: {
+    openapi: "3.0.0",
     info: {
       title: "Library API",
       version: "1.0.0",
     },
+    components: {
+      responses: {
+        UnauthorizedError: {
+          description: "Access token is missing or invalid",
+          headers: {
+            WWW_Authenticate: {
+              schema: {
+                type: "string",
+              },
+            },
+          },
+        },
+      },
+      securitySchemes: {
+        basicAuth: {
+          type: "http",
+          scheme: "basic",
+        },
+      },
+    },
+    security: [
+      {
+        basicAuth: [],
+      },
+    ],
   },
   apis: ["app.js"],
 };
@@ -17,15 +63,20 @@ const swaggerOptions = {
 const swaggerDocs = swaggerjsdoc(swaggerOptions);
 console.log(swaggerDocs);
 app.use("/api-docs", swaggerui.serve, swaggerui.setup(swaggerDocs));
+app.use(basicAuth);
 
 /**
  * @swagger
  * /books:
  *      get:
  *          description: Get all books
+ *          security:
+ *              - basicAuth: []
  *          responses:
  *              200:
  *                  description: Success
+ *              401:
+ *                  $ref: '#/components/responses/UnauthorizedError'
  */
 
 app.get("/books", (req, res) => {
@@ -42,15 +93,23 @@ app.get("/books", (req, res) => {
  * /books:
  *      post:
  *          description: Add new Book
- *          parameters:
- *             - name: title
- *               description: Title of the book
- *               in: formData
- *               required: true
- *               type: string
+ *          security:
+ *            - basicAuth: []
+ *          requestBody:
+ *            content:
+ *              application/x-www-form-urlencoded:
+ *                schema:
+ *                  type: object
+ *                  properties:
+ *                    title:
+ *                      type: string
+ *                      description: Title of the book
+ *                      example: "Harry Potter"
  *          responses:
  *              201:
  *                  description: Added new book
+ *              401:
+ *                  $ref: '#/components/responses/UnauthorizedError'
  */
 app.post("/books", (req, res) => {
   res.status(201).send();
